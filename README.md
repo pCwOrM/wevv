@@ -20,7 +20,7 @@
 [![Foundational Theory DOI](https://img.shields.io/badge/Foundational%20Theory%20DOI-10.5281%2Fzenodo.22774934-024dad.svg)](https://doi.org/10.5281/zenodo.22774934)
 [![Preprint Status](https://img.shields.io/badge/Preprint-arXiv%3A2609.25498-blue.svg)](https://arxiv.org/abs/2609.25498)
 [![Live Demo: GitHub Pages](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-38bdf8.svg)](https://pcworm.github.io/werr/)
-[![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-blue.svg)](pyproject.toml)
+[![Version: 0.5.1](https://img.shields.io/badge/Version-0.5.1-blue.svg)](pyproject.toml)
 [![GitHub Education: Community Exchange](https://img.shields.io/badge/GitHub%20Education-Community%20Exchange-2ea44f?logo=github&logoColor=white)](https://education.github.com/globalcampus/exchange)
 [![Live Benchmark Arena](https://img.shields.io/badge/Live%20Benchmark-WebMCP%20%7C%20JevBench%20%7C%20Gym%20%7C%20Arena%20%7C%20Tau--Bench-blueviolet.svg)](https://pcworm.github.io/werr/#benchmark-arena)
 [![The Gauntlet Master Benchmarks](https://img.shields.io/badge/The%20Gauntlet-Official%20Benchmark%20Directory-brightgreen.svg)](./benchmarks/)

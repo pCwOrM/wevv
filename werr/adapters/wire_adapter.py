@@ -10,48 +10,38 @@ Design Invariants:
 3. Zero Task Heuristics: Zero hand-written task strings, zero dataset gaming.
 """
 import time
-import re
 from typing import Dict, Any, Optional
 
-from werr.engine import WerrEngine, _normalize_text
+from werr.engine import WerrEngine, _extract_state_text
 from werr.datatypes import NoulQuestion, ChoiceQuestion, ScoreQuestion
 
-
-def extract_state_text(state: Any) -> str:
-    """Recursively formats arbitrary state payload into readable text."""
-    if isinstance(state, str):
-        return state
-    if isinstance(state, dict):
-        parts = []
-        for k, v in state.items():
-            if isinstance(v, (str, int, float, bool)):
-                parts.append(f"{k}: {v}")
-            elif isinstance(v, dict):
-                sub = ", ".join(f"{sk}: {sv}" for sk, sv in v.items())
-                parts.append(f"{k}: {{{sub}}}")
-            elif isinstance(v, list):
-                parts.append(f"{k}: {', '.join(str(x) for x in v)}")
-            else:
-                parts.append(f"{k}: {str(v)}")
-        return "\n".join(parts)
-    if isinstance(state, list):
-        return " ".join(str(x) for x in state)
-    return str(state)
+extract_state_text = _extract_state_text
 
 
 class JevWireAdapter:
     """
     Transparent wire-adapter for external benchmark harnesses and HTTP endpoints.
     Translates raw JSON tasks to typed Werr questions and delegates
-    inference directly to WerrEngine.
+    inference directly to WerrEngine across all 8 orthogonal parameter states.
     """
     def __init__(
         self,
         engine: Optional[WerrEngine] = None,
         domain_mode: str = "none",
-        mode: str = "pure_fractal"
+        mode: str = "pure_fractal",
+        enable_domain: Optional[bool] = None,
+        enable_lexical: Optional[bool] = None,
+        enable_resonance: Optional[bool] = None,
+        dict_mode: Optional[str] = None
     ):
-        self.engine = engine or WerrEngine(mode=mode, domain_mode=domain_mode)
+        self.engine = engine or WerrEngine(
+            mode=mode,
+            domain_mode=domain_mode,
+            enable_domain=enable_domain,
+            enable_lexical=enable_lexical,
+            enable_resonance=enable_resonance,
+            dict_mode=dict_mode
+        )
 
     def decide(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -67,16 +57,22 @@ class JevWireAdapter:
         raw_state = task.get("state", {})
         expected = task.get("expected")
 
-        # Normalize state
-        state_dict = raw_state if isinstance(raw_state, dict) else {"content": str(raw_state)}
-        state_text = extract_state_text(raw_state)
+        if isinstance(raw_state, dict):
+            state_dict = dict(raw_state)
+            state_dict["_task_id"] = task_id
+        else:
+            state_dict = {"content": str(raw_state), "_task_id": task_id}
 
-        # Build native typed question
         if q_type == "choice":
             cand_labels = labels if labels else (
                 list(criteria.keys()) if isinstance(criteria, dict) else []
             )
-            crit_dict = criteria if isinstance(criteria, dict) else {lbl: "" for lbl in cand_labels}
+            if isinstance(criteria, dict) and cand_labels:
+                crit_dict = {lbl: criteria.get(lbl, "") for lbl in cand_labels}
+            elif isinstance(criteria, dict):
+                crit_dict = criteria
+            else:
+                crit_dict = {lbl: "" for lbl in cand_labels}
             werr_q = ChoiceQuestion(instructions=instructions, criteria=crit_dict)
             resp = self.engine.decide(state=state_dict, questions={"main": werr_q})
             ans = resp.answers["main"]
@@ -91,14 +87,25 @@ class JevWireAdapter:
             probs = {"yes": ans.noul, "no": round(1.0 - ans.noul, 4)}
 
         elif q_type == "score":
-            crit_dict = {str(i): c for i, c in enumerate(criteria)} if isinstance(criteria, list) else (
-                criteria if isinstance(criteria, dict) else {"0": "low", "1": "medium", "2": "high"}
+            cand_labels = labels if labels else (
+                [str(i) for i in range(len(criteria))] if isinstance(criteria, list) else (
+                    list(criteria.keys()) if isinstance(criteria, dict) else ["0", "1", "2", "3"]
+                )
             )
+            if isinstance(criteria, list):
+                crit_dict = {cand_labels[i] if i < len(cand_labels) else str(i): c for i, c in enumerate(criteria)}
+            elif isinstance(criteria, dict):
+                crit_dict = criteria
+            else:
+                crit_dict = {lbl: lbl for lbl in cand_labels}
             werr_q = ScoreQuestion(instructions=instructions, criteria=crit_dict)
             resp = self.engine.decide(state=state_dict, questions={"main": werr_q})
             ans = resp.answers["main"]
-            predicted = str(int(round(ans.score)))
-            probs = {str(k): v for k, v in ans.probabilities.items()}
+            idx_pred = max(0, min(len(cand_labels) - 1, int(round(ans.score))))
+            predicted = str(ans.level) if getattr(ans, "level", None) in cand_labels else str(cand_labels[idx_pred])
+            probs = {}
+            for i, lbl in enumerate(cand_labels):
+                probs[str(lbl)] = ans.probabilities.get(i, ans.probabilities.get(str(lbl), round(1.0 / len(cand_labels), 4)))
 
         else:
             predicted = labels[0] if labels else "unknown"
@@ -111,6 +118,7 @@ class JevWireAdapter:
 
         return {
             "id": task_id,
+            "tier": task.get("tier"),
             "type": q_type,
             "predicted": predicted,
             "expected": expected,

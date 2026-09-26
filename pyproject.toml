@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "werr"
-version = "0.5.0"
+version = "0.5.1"
 authors = [
   { name="ITouch Systems", email="info@itouch.com.tr" },
   { name="Volkan Dagli", email="ask@answerr.me" }

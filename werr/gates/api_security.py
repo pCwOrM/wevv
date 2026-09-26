@@ -47,26 +47,33 @@ class APISecurityGate(DomainGate):
 
         for k, v in sorted(state.items()):
             kl = normalize_text(k)
-            if isinstance(v, (int, float)):
+            if isinstance(v, bool):
+                values.append(1.0 if v else -1.0)
+                if any(w in kl for w in ['auth', 'valid', 'safe', 'internal', 'verified', 'guvenli', 'onayli', 'gecerli', 'admin', 'dogru']):
+                    net_risk += -0.8 if v else 1.5
+                elif any(w in kl for w in ['ddos', 'attack', 'malicious', 'supheli', 'saldiri', 'fidye', 'sizinti']):
+                    net_risk += 2.5 if v else -0.5
+            elif isinstance(v, (int, float)):
                 norm_val = 2.0 / (1.0 + math.exp(-float(v) / 10.0 if abs(v) < 700 else (-1.0 if v < 0 else 1.0))) - 1.0
                 values.append(norm_val)
                 if any(w in kl for w in ['fail', 'error', 'attempt', 'hata', 'yanlis', 'basarisiz', 'deneme']):
                     net_risk += (float(v) / 5.0) * 1.5
-                elif any(w in kl for w in ['freq', 'rate', 'speed', 'hiz', 'siklik', 'oran', 'frekans']):
+                elif any(w in kl for w in ['freq', 'rate', 'speed', 'hiz', 'siklik', 'oran', 'frekans', 'istek_sayisi', 'taranan_port', 'degisim_hizi']):
                     net_risk += (float(v) / 50.0) * 1.0
                 elif any(w in kl for w in ['payload', 'byte', 'kb', 'boyut', 'paket', 'veri']):
                     net_risk += (float(v) / 500.0) * 0.5
-            elif isinstance(v, bool):
-                values.append(1.0 if v else -1.0)
-                if any(w in kl for w in ['auth', 'valid', 'safe', 'internal', 'verified', 'guvenli', 'onayli', 'gecerli', 'admin']):
-                    net_risk += -0.8 if v else 1.2
-                elif any(w in kl for w in ['ddos', 'attack', 'malicious', 'supheli', 'saldiri']):
-                    net_risk += 2.5 if v else -0.5
             elif isinstance(v, str):
                 vl = normalize_text(v)
+                if any(bad in vl for bad in ["rm -rf", "' or '", "drop table", "union select", ".locked", "gecersiz"]):
+                    net_risk += 3.0
+                    values.append(1.0)
+                    continue
                 matched = False
                 for r_key, r_risk in semantic_roles.items():
-                    if r_key in vl:
+                    if r_key == vl or r_key in vl.split("_") or r_key in vl.split():
+                        # Do not let generic 'yetki: user' cancel out a sudo/guest violation
+                        if r_key == "user" and kl == "yetki" and "sudo" in normalize_text(str(state.get("komut", ""))):
+                            continue
                         net_risk += r_risk
                         values.append(math.tanh(r_risk))
                         matched = True
@@ -78,6 +85,12 @@ class APISecurityGate(DomainGate):
                     values.append(math.cos(angle))
             else:
                 values.append(0.0)
+
+        # Impossible travel anomaly check
+        if "onceki_konum" in state and "yeni_konum" in state:
+            if normalize_text(str(state["onceki_konum"])) != normalize_text(str(state["yeni_konum"])):
+                if float(state.get("aradaki_sure_dk", 999)) < 60.0:
+                    net_risk += 2.8
 
         if not values:
             return np.zeros(4, dtype=np.float64), 0.0

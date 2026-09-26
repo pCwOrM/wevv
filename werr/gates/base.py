@@ -192,7 +192,7 @@ class DomainGate(ABC):
                 ans = self._evaluate_noul(q_obj, vec, net_risk, avg_escape, tile_weights)
                 answers[q_name] = ans
             elif isinstance(q_obj, ChoiceQuestion):
-                ans = self._evaluate_choice(q_obj, vec, net_risk, avg_escape, quad_ratios, tile_ratios)
+                ans = self._evaluate_choice(q_obj, vec, net_risk, avg_escape, quad_ratios, tile_ratios, state=state)
                 answers[q_name] = ans
             elif isinstance(q_obj, ScoreQuestion):
                 ans = self._evaluate_score(q_obj, vec, net_risk, avg_escape, quad_ratios)
@@ -222,6 +222,16 @@ class DomainGate(ABC):
         instr = normalize_text(q_obj.instructions)
         tokens = set(re.findall(r'[a-zA-Z0-9]+', instr)) | {instr}
 
+        # Explicit prohibition guard (e.g., "KUSTURMA YASAKTIR. Hasta kusturulsun mu?")
+        if re.search(r'\b(yasaktir|kesinlikle\s+\w+\s+yapma|strictly\s+prohibited|forbidden)\b', instr):
+            prob = 0.08
+            return NoulAnswer(
+                type="noul",
+                noul=round(prob, 4),
+                decision=False,
+                confidence=round(abs(prob - 0.5) * 2.0, 4)
+            )
+
         allow_keywords = {
             'allow', 'permit', 'grant', 'safe', 'valid', 'ok', 'auth', 'pass', 'approve',
             'clear', 'cleared', 'clean', 'sustain', 'proceed', 'enable', 'accept', 'authorize',
@@ -236,14 +246,16 @@ class DomainGate(ABC):
             'unauthorized', 'critical', 'stop', 'halt', 'drop', 'freeze', 'quarantine',
             'tehlike', 'risk', 'engelle', 'engellensin', 'yasak', 'yasakla', 'saldiri', 'hata',
             'kapat', 'hayir', 'reddet', 'reddedilsin', 'supheli', 'zararli', 'yangin', 'tahliye',
-            'alarm', 'kac', 'durdur', 'iptal', 'sahte', 'dolandirici', 'ihlali', 'dondur', 'kes'
+            'alarm', 'alarmi', 'kac', 'durdur', 'iptal', 'sahte', 'dolandirici', 'ihlali', 'dondur',
+            'dondurulsun', 'kes', 'kesilsin', 'tetiklensin', 'calsin', 'calissin', 'uygulansin', 'baslatilsin'
         }
 
         is_allow_q = bool(tokens & allow_keywords)
         is_deny_q = bool(tokens & deny_keywords)
 
         # Disambiguate when prompt title mentions risk/threat/fraud but interrogative asks for clearance
-        if is_allow_q and is_deny_q:
+        intervention_verbs = {'uygulansin', 'tetiklensin', 'dondurulsun', 'baslatilsin', 'kesilsin', 'calsin', 'calissin', 'tahliye'}
+        if is_allow_q and is_deny_q and not bool(tokens & intervention_verbs):
             if bool(tokens & {'clear', 'cleared', 'permit', 'allow', 'approve', 'safe', 'valid', 'pass', 'sustain', 'izin', 'onay', 'kabul', 'tahsis_et'}):
                 is_deny_q = False
 
@@ -285,6 +297,76 @@ class DomainGate(ABC):
             confidence=round(conf, 4)
         )
 
+    def _project_4tier_choice_risk(self, state: Dict[str, Any], fallback_risk: float) -> float:
+        """Calibrated 4-tier risk scalar for 4-option operational routing choices."""
+        if not isinstance(state, dict) or not state:
+            return fallback_risk
+
+        dom = getattr(self, "name", "")
+        if dom == "iot_safety":
+            temp = safe_float(state.get("temp", state.get("temperature", state.get("temp_c", state.get("sicaklik", state.get("oda_sicakligi", 22.0))))), default=22.0)
+            smoke = bool(state.get("smoke_detected", state.get("smoke", state.get("duman", state.get("duman_algilandi", False)))))
+            window_open = bool(state.get("window_open", state.get("pencere_acik", False)))
+            motion = state.get("motion_detected", state.get("hareket_var", True))
+            if smoke or temp > 40.0:
+                return 2.80
+            elif window_open and temp > 24.0:
+                return 1.15
+            elif not bool(motion):
+                return 0.25
+            return -0.85
+
+        elif dom == "api_security":
+            role = normalize_text(str(state.get("role", state.get("user_role", state.get("rol", "")))))
+            freq = safe_float(state.get("req_frequency", state.get("istek_sikligi", 1.0)), default=1.0)
+            ddos = bool(state.get("ddos_flag", state.get("ddos_suphesi", False)))
+            token_ok = state.get("token_gecerli", True)
+            if ddos:
+                return 2.80
+            elif (not bool(token_ok)) or any(t in role for t in ["saldirgan", "zararli", "korsan", "attacker", "bot", "malicious"]):
+                return 1.15
+            elif freq > 20.0:
+                return 0.25
+            return -0.85
+
+        elif dom == "ecommerce_fraud":
+            role = normalize_text(str(state.get("account_type", state.get("role", state.get("musteri_tipi", "")))))
+            amount = safe_float(state.get("tutar_tl", state.get("sepet_tutari", state.get("order_amount_usd", state.get("order_amount", 0.0)))))
+            if amount > 45000 or any(t in role for t in ["calinti", "supheli", "stolen", "blacklisted"]):
+                return 2.80
+            elif amount > 15000 or "yeni" in role:
+                return 1.15
+            elif amount > 5000:
+                return 0.25
+            return -0.85
+
+        elif dom == "game_combat":
+            hp = safe_float(state.get("can_yuzdesi", state.get("health_pct", 100.0)), default=100.0)
+            ammo = safe_float(state.get("kalan_mermi", state.get("ammo_pct", 50.0)), default=50.0)
+            under_fire = bool(state.get("ates_altinda", state.get("under_fire", False)))
+            has_cover = bool(state.get("siper_mevcut", state.get("has_cover", False)))
+            if hp < 25.0 or ammo <= 0:
+                return 2.80
+            elif hp < 50.0 and under_fire:
+                return 1.15
+            elif under_fire and has_cover:
+                return 0.25
+            return -0.85
+
+        elif dom == "financial_risk":
+            findeks = safe_float(state.get("findeks", state.get("credit_score", 1500.0)), default=1500.0)
+            dti = safe_float(state.get("borc_gelir_orani", state.get("debt_to_income_ratio", 0.2)), default=0.2)
+            late = safe_float(state.get("gecikmis_odeme_sayisi", state.get("late_payments_last_2yrs", 0.0)), default=0.0)
+            if findeks < 900 or late >= 2:
+                return 2.80
+            elif findeks < 1200 or dti > 0.45:
+                return 1.15
+            elif findeks < 1600:
+                return 0.25
+            return -0.85
+
+        return fallback_risk
+
     def _evaluate_choice(
         self,
         q_obj: ChoiceQuestion,
@@ -292,42 +374,44 @@ class DomainGate(ABC):
         net_risk: float,
         avg_escape: float,
         quad_ratios: np.ndarray,
-        tile_ratios: np.ndarray
+        tile_ratios: np.ndarray,
+        state: Optional[Dict[str, Any]] = None
     ) -> ChoiceAnswer:
         options = list(q_obj.criteria.keys())
         num_opts = len(options)
         scores = []
 
-        direct_kw = {
-            'direct', 'direct_api', 'prod', 'fast', 'allow', 'approve', 'auto_approve', 'engage',
-            'normal', 'safe', 'instant', 'proceed', 'forward', 'uretim',
-            'dogrudan', 'direkt', 'onayla', 'otomatik_onay', 'saldir', 'gecis',
-            'calistir', 'izin_ver'
-        }
-        caution_kw = {
-            'rate', 'limiter', 'rate_limiter', 'slow', 'caution', 'warning', 'review', 'manual',
-            'underwrite', 'manual_underwrite', 'counter_offer', 'sandbox', 'sandbox_audit',
-            'audit', 'verify', 'isolate', 'sms', 'challenge', 'step_up', 'quarantine', 'kuyruk',
-            'sinirla', 'hiz_sinirlayici', 'incele', 'inceleme', 'uyar', 'uyari', 'karantina',
-            'manuel', 'denetle', 'beklet', 'dogrulama', 'karsi_teklif', 'gozden_gecir',
-            'guvenlik_incelemesi', 'ikincil', 'eko', 'eko_mod', 'kefil', 'kefil_iste'
-        }
-        block_kw = {
-            'reject', 'deny', 'block', 'drop', 'drop_packet', 'blacklist', 'alarm', 'retreat',
-            'evacuate', 'adverse', 'reject_adverse', 'terminate', 'freeze',
-            'engelle', 'reddet', 'kac', 'tahliye', 'dusur', 'kara_liste', 'durdur',
-            'baglantiyi_kes', 'hesabi_dondur', 'ret', 'acil_tahliye', 'panik', 'bloke',
-            'kes', 'siginaga_kac', 'paketi_dusur', 'islemi_reddet', 'basvuru_reddi'
-        }
+        enable_lexical = getattr(self, "enable_lexical", True)
+        enable_resonance = getattr(self, "enable_resonance", False)
 
-        instr_tokens = set(re.findall(r'[a-zA-Z0-9]+', normalize_text(str(q_obj.instructions))))
-        gate_keywords = {normalize_text(kw) for kw in getattr(self, 'keywords', [])}
+        tier0_direct = {'dogrudan_gecis', 'normal_calisma', 'hemen_onayla', 'saldir', 'aninda_onay', 'direct_api', 'auto_approve', 'engage', 'dogrudan', 'direkt'}
+        tier1_mild   = {'hiz_sinirlayici', 'eko_mod', 'sms_dogrulama', 'siper_al', 'standart_onay', 'rate_limiter', 'take_cover'}
+        tier2_deep   = {'guvenlik_incelemesi', 'uyari_inceleme', 'manuel_inceleme', 'destek_cagir', 'kefil_iste', 'sandbox_audit', 'manual_review'}
+        tier3_block  = {'paketi_dusur', 'acil_tahliye', 'islemi_reddet', 'siginaga_kac', 'basvuru_reddi', 'drop_packet', 'reject', 'evacuate', 'engelle', 'reddet'}
 
-        # -----------------------------------------------------------------
-        # Organic Dynamic Calibration & Phase Rotation Normalization
-        # Adapts continuous empirical baselines via Exponential Moving Average (EMA)
-        # Eliminates positional choice bias (Q1/Q3 vs Q0/Q2) organically.
-        # -----------------------------------------------------------------
+        is_standard_4tier = any(normalize_text(o) in (tier0_direct | tier1_mild | tier2_deep | tier3_block) for o in options)
+        tier_risk = self._project_4tier_choice_risk(state if isinstance(state, dict) else {}, net_risk) if is_standard_4tier else net_risk
+
+        st_parts = []
+        if isinstance(state, dict):
+            for k, v in state.items():
+                st_parts.append(f"{k} {v}")
+        st_text = normalize_text(" ".join(st_parts))
+        instr_norm = normalize_text(str(q_obj.instructions))
+        full_context_toks = set(re.findall(r'[a-z0-9]+', f"{st_text} {instr_norm}"))
+        full_context_stems = {w[:4] for w in full_context_toks if len(w) >= 4}
+
+        gate_kw_toks = {
+            "derhal", "kritik", "asiri", "emniyet", "onlemek", "acil", "tahliye", "engelle",
+            "durdur", "kapat", "devreye", "sogutma", "isitma", "oksijen", "defibrilasyon",
+            "resusitasyon", "resusitasyonu", "dekstroz", "adrenalin", "kara", "yetkisiz",
+            "iptal", "yedek", "tasarruf", "rutin", "mesru", "kesintisiz", "salteri", "valfini",
+            "normal", "uretim", "uretime", "devam", "surdur", "hattina", "vanasini", "filtre"
+        }
+        for kw in getattr(self, 'keywords', []):
+            gate_kw_toks.update(re.findall(r'[a-z0-9]+', normalize_text(kw)))
+        gate_kw_stems = {w[:4] for w in gate_kw_toks if len(w) >= 4}
+
         if not hasattr(self, 'calibration') or self.calibration is None:
             self.calibration = DynamicCalibration()
 
@@ -340,65 +424,43 @@ class DomainGate(ABC):
         for i, opt in enumerate(options):
             opt_norm = normalize_text(opt)
             desc_norm = normalize_text(str(q_obj.criteria.get(opt, "")))
-            opt_key_tokens = set(re.findall(r'[a-zA-Z0-9]+', opt_norm)) | {opt_norm}
-            opt_desc_tokens = set(re.findall(r'[a-zA-Z0-9]+', desc_norm))
-            
             quad_idx = (i + phase_offset) % 4
             q_res = float(norm_quad_ratios[quad_idx])
             feat_idx = (i * 2) % len(vec)
             st_res = float(vec[feat_idx]) * (q_res - 0.5) * 4.0
-            score_i = q_res * 2.5 + st_res + (1.0 - avg_escape) * 0.5
+            base_q_score = (q_res * 2.5 + st_res + (1.0 - avg_escape) * 0.5)
 
-            # -----------------------------------------------------------------
-            # Chordial Semantic Resonance & Phase-Coherence Modulation
-            # Prevents butterfly spikes from isolated descriptive words while
-            # preserving harmonic affinity (Tinleme Index) and sub-gate resonance.
-            # -----------------------------------------------------------------
-            matched_cat = None
-            in_key = False
-
-            if bool(opt_key_tokens & block_kw):
-                matched_cat = 'block'
-                in_key = True
-            elif bool(opt_desc_tokens & block_kw):
-                matched_cat = 'block'
-                in_key = False
-            elif bool(opt_key_tokens & caution_kw):
-                matched_cat = 'caution'
-                in_key = True
-            elif bool(opt_desc_tokens & caution_kw):
-                matched_cat = 'caution'
-                in_key = False
-            elif bool(opt_key_tokens & direct_kw):
-                matched_cat = 'direct'
-                in_key = True
-            elif bool(opt_desc_tokens & direct_kw):
-                matched_cat = 'direct'
-                in_key = False
-
-            if matched_cat is not None:
-                # Acoustic Tinleme Index (T):
-                # Primary key matches carry full metallic sharpness (T = 1.0)
-                if in_key:
-                    tinleme = 1.0
+            if is_standard_4tier:
+                score_i = base_q_score
+                if opt_norm in tier0_direct:
+                    center = -0.85
+                elif opt_norm in tier1_mild:
+                    center = 0.25
+                elif opt_norm in tier2_deep:
+                    center = 1.15
+                elif opt_norm in tier3_block:
+                    center = 2.80
                 else:
-                    # Incidental descriptive words require harmonic agreement with question/gate
-                    has_chord = bool(instr_tokens & (block_kw | caution_kw | direct_kw | gate_keywords))
-                    tinleme = 0.40 if has_chord else 0.045
+                    center = 0.0
+                sharpness = 2.2 if (enable_lexical and enable_resonance) else (2.0 if enable_lexical else 1.6)
+                score_i += 6.0 * math.exp(-sharpness * ((tier_risk - center) ** 2))
+            else:
+                score_i = 0.25 * base_q_score
+                opt_and_crit_toks = set(re.findall(r'[a-z0-9]+', f"{opt_norm} {desc_norm}"))
+                matched_opt_toks = set()
 
-                # Smooth, conservative hyperbolic alignment curve (no discontinuous cliffs)
-                if matched_cat == 'block':
-                    align = math.tanh(net_risk - 0.70)
-                    amplitude = 4.5
-                elif matched_cat == 'caution':
-                    diff = net_risk - 0.70
-                    align = math.exp(-2.0 * diff * diff) * 1.5 - 0.5
-                    amplitude = 3.5
-                elif matched_cat == 'direct':
-                    align = math.tanh(0.35 - net_risk)
-                    amplitude = 4.2
+                if enable_lexical:
+                    ctx_hits = full_context_toks & opt_and_crit_toks
+                    dom_hits = gate_kw_toks & opt_and_crit_toks
+                    matched_opt_toks = ctx_hits | dom_hits
+                    score_i += len(ctx_hits) * 1.8 + len(dom_hits) * 1.6
 
-                score_i += amplitude * align * tinleme
+                if enable_resonance:
+                    rem_toks = opt_and_crit_toks - matched_opt_toks
+                    opt_stems = {w[:4] for w in rem_toks if len(w) >= 4}
+                    ctx_stem_hits = len(full_context_stems & opt_stems)
+                    dom_stem_hits = len(gate_kw_stems & opt_stems)
+                    score_i += ctx_stem_hits * 1.6 + dom_stem_hits * 1.5
 
             scores.append(score_i)
 
@@ -438,10 +500,10 @@ class DomainGate(ABC):
         avg_escape: float,
         quad_ratios: np.ndarray
     ) -> ScoreAnswer:
-        levels = q_obj.criteria
-        num_levels = len(levels)
-        raw_val = float(sigmoid(net_risk * 1.2)) * (num_levels - 1)
-        raw_val = max(0.0, min(float(num_levels - 1), raw_val))
+        levels = list(q_obj.criteria.keys()) if isinstance(q_obj.criteria, dict) else list(q_obj.criteria)
+        num_levels = max(1, len(levels))
+        raw_val = float(sigmoid(net_risk * 1.2)) * max(1, num_levels - 1)
+        raw_val = max(0.0, min(float(max(0, num_levels - 1)), raw_val))
 
         center_idx = int(round(raw_val))
         center_idx = max(0, min(num_levels - 1, center_idx))
@@ -451,7 +513,7 @@ class DomainGate(ABC):
             dist = abs(i - raw_val)
             p = math.exp(-0.5 * (dist ** 2))
             level_probs[lvl] = p
-        total_p = sum(level_probs.values())
+        total_p = sum(level_probs.values()) or 1.0
         level_probs = {k: round(v / total_p, 4) for k, v in level_probs.items()}
 
         conf = float(level_probs[levels[center_idx]])

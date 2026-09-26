@@ -273,6 +273,32 @@ class TestMultiDomainRouting(unittest.TestCase):
         self.assertIn("probs", res)
         self.assertLess(res["latency_ms"], 50.0)
 
+    def test_8_state_orthogonal_parameter_matrix(self):
+        """Verify all 8 boolean combinations of (enable_domain, enable_lexical, enable_resonance)."""
+        for d_on in (False, True):
+            for l_on in (False, True):
+                for r_on in (False, True):
+                    eng = WerrEngine(
+                        enable_domain=d_on,
+                        enable_lexical=l_on,
+                        enable_resonance=r_on,
+                        resolution=24,
+                        max_iter=24
+                    )
+                    if not d_on:
+                        # Rule 1: When Domain is OFF, domain dictionaries are locked OFF
+                        self.assertFalse(eng.enable_lexical)
+                        self.assertFalse(eng.enable_resonance)
+                        self.assertFalse(eng.effective_domain_active)
+                    elif not l_on and not r_on:
+                        # Rule 2: [1,0,0] auto-guards to Universal Cusp
+                        self.assertFalse(eng.effective_domain_active)
+                    else:
+                        # Rule 3: [1,1,0], [1,0,1], [1,1,1] activate domain + selected dictionaries
+                        self.assertTrue(eng.effective_domain_active)
+                        self.assertEqual(eng.enable_lexical, l_on)
+                        self.assertEqual(eng.enable_resonance, r_on)
+
 
 if __name__ == "__main__":
     unittest.main()
