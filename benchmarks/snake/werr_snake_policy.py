@@ -54,16 +54,21 @@ class WerrSnakePolicy:
     def __init__(self, guarded: bool = True, prompt: str = "compact", resolution: int = 32, max_iter: int = 30):
         self.guarded = guarded
         self.prompt = prompt
-        # Tactical Game AI boundary seed
+        # Tactical Game AI boundary seed (Non-Domain Pure Fractal [0,0,0])
         self.engine = WerrEngine(
             base_cx=-0.7445,
             base_cy=0.1250,
             base_zoom=65.0,
             resolution=resolution,
-            max_iter=max_iter
+            max_iter=max_iter,
+            mode="pure_fractal",
+            domain_mode="none",
+            enable_domain=False,
+            enable_lexical=False,
+            enable_resonance=False
         )
         self.metadata = {
-            "name": "werr-0.3.0",
+            "name": "werr-0.5.1",
             "architecture": "0-VRAM Fractal Escape-Time Kernel",
             "vram_bytes": 0,
             "hardware": get_hardware_name(),

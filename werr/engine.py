@@ -108,7 +108,7 @@ class WerrEngine:
         base_zoom: float = 50.0,
         resolution: int = 36,
         max_iter: int = 36,
-        mode: str = "lexical",
+        mode: Optional[str] = None,
         enable_ontologies: Optional[bool] = None,
         domain_mode: Optional[str] = None,
         enable_domain: Optional[bool] = None,
@@ -145,6 +145,13 @@ class WerrEngine:
             self.enable_domain = False
 
         # 2. Resolve Dictionary switches (enable_lexical, enable_resonance, dict_mode, mode)
+        self._explicit_dict_set = (
+            enable_lexical is not None
+            or enable_resonance is not None
+            or dict_mode is not None
+            or enable_ontologies is not None
+            or mode is not None
+        )
         if enable_lexical is not None or enable_resonance is not None:
             raw_lex = bool(enable_lexical) if enable_lexical is not None else False
             raw_res = bool(enable_resonance) if enable_resonance is not None else False
@@ -161,13 +168,45 @@ class WerrEngine:
             raw_lex = dm in ("lexical", "hybrid", "both", "production")
             raw_res = dm in ("resonance", "hybrid", "both")
             self.mode = dm if dm in ("lexical", "resonance", "hybrid") else ("pure_fractal" if not (raw_lex or raw_res) else "lexical")
-        else:
-            if enable_ontologies is not None:
-                self.mode = "lexical" if enable_ontologies else "pure_fractal"
+        elif enable_ontologies is not None:
+            if enable_ontologies:
+                raw_lex = True
+                raw_res = self.enable_domain
+                self.mode = "hybrid" if self.enable_domain else "pure_fractal"
             else:
-                self.mode = str(mode).lower()
-            raw_lex = self.mode in ("lexical", "production", "hybrid", "both")
-            raw_res = self.mode in ("resonance", "hybrid", "both")
+                raw_lex = False
+                raw_res = False
+                self.mode = "pure_fractal"
+        elif mode is not None:
+            m_str = str(mode).lower()
+            if m_str in ("hybrid", "both") or (m_str == "production" and self.enable_domain):
+                raw_lex = True
+                raw_res = True
+                self.mode = "hybrid" if self.enable_domain else "pure_fractal"
+            elif m_str in ("lexical", "production"):
+                raw_lex = True
+                raw_res = False
+                self.mode = "lexical" if self.enable_domain else "pure_fractal"
+            elif m_str == "resonance":
+                raw_lex = False
+                raw_res = True
+                self.mode = "resonance" if self.enable_domain else "pure_fractal"
+            else:
+                raw_lex = False
+                raw_res = False
+                self.mode = "pure_fractal"
+        else:
+            # Conflict-free purpose-aligned defaults:
+            # - When Domain is ON ('multi'): Hybrid [1,1,1] (Lexical + Resonance active)
+            # - When Domain is OFF ('none'): Pure Fractal [0,0,0] (Dictionaries locked OFF, legacy gateway role safety preserved)
+            if self.enable_domain:
+                raw_lex = True
+                raw_res = True
+                self.mode = "hybrid"
+            else:
+                raw_lex = True
+                raw_res = False
+                self.mode = "pure_fractal"
 
         self.raw_enable_lexical = raw_lex
         self.raw_enable_resonance = raw_res

@@ -59,7 +59,7 @@ class WerrJevWireHandler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 "status": "healthy",
                 "system": "werr",
-                "version": "0.4.0",
+                "version": "0.5.1",
                 "engine": "System-One Zero-Memory Fractal Kernel",
                 "wire_format": "TypeSafe /v1/systemone Compatible",
             })
@@ -143,22 +143,35 @@ def run_server(
     verbose: bool = False,
     enable_telemetry: bool = False,
     domain_mode: str = "none",
-    mode: str = "production",
+    mode: str = None,
+    enable_domain: bool = None,
+    enable_lexical: bool = None,
+    enable_resonance: bool = None,
 ):
     if not enable_telemetry:
         os.environ["WERR_TELEMETRY"] = "0"
     else:
         os.environ["WERR_TELEMETRY"] = "1"
 
-    engine = WerrEngine(mode=mode, domain_mode=domain_mode)
+    resolved_mode = mode if mode is not None else ("hybrid" if (enable_domain or domain_mode == "multi") else "pure_fractal")
+    engine = WerrEngine(
+        mode=resolved_mode,
+        domain_mode=domain_mode,
+        enable_domain=enable_domain,
+        enable_lexical=enable_lexical,
+        enable_resonance=enable_resonance,
+    )
     adapter = JevWireAdapter(engine=engine)
 
     server = HTTPServer((host, port), WerrJevWireHandler)
     server.engine = adapter
     server.verbose = verbose
 
-    print(f"[*] Werr System-One Decision Server running at http://{host}:{port}")
-    print(f"[*] Architecture : domain_mode='{domain_mode}', mode='{mode}'")
+    print(f"[*] Werr System-One Decision Server v0.5.1 running at http://{host}:{port}")
+    print(
+        f"[*] Architecture : domain_mode='{engine.domain_mode}', mode='{engine.mode}' "
+        f"[domain={engine.enable_domain}, lexical={engine.enable_lexical}, resonance={engine.enable_resonance}]"
+    )
     print(f"[*] Wire Formats : POST /v1/systemone, POST /decide, GET /health")
     print(
         f"[*] Telemetry   : "
@@ -172,11 +185,14 @@ def run_server(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Werr Decision HTTP Server")
+    parser = argparse.ArgumentParser(description="Werr Decision HTTP Server (v0.5.1)")
     parser.add_argument("--host", default="0.0.0.0", help="Binding host")
     parser.add_argument("--port", type=int, default=8443, help="Binding port")
     parser.add_argument("--domain-mode", default="none", choices=["none", "multi"], help="Domain routing: 'none' (domainless monolithic default) or 'multi' (domain gates)")
-    parser.add_argument("--mode", default="production", choices=["production", "pure_fractal"], help="Engine mode: 'production' or 'pure_fractal'")
+    parser.add_argument("--mode", default=None, choices=["pure_fractal", "lexical", "resonance", "hybrid", "production"], help="Engine dictionary mode (auto-aligned with domain-mode if omitted)")
+    parser.add_argument("--enable-domain", dest="enable_domain", action="store_true", default=None, help="Explicitly enable multi-domain routing")
+    parser.add_argument("--enable-lexical", dest="enable_lexical", action="store_true", default=None, help="Explicitly enable lexical dictionary")
+    parser.add_argument("--enable-resonance", dest="enable_resonance", action="store_true", default=None, help="Explicitly enable resonance dictionary")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     parser.add_argument(
         "--enable-telemetry",
@@ -190,4 +206,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     telemetry_flag = args.enable_telemetry and not args.no_telemetry
-    run_server(args.host, args.port, args.verbose, telemetry_flag, args.domain_mode, args.mode)
+    run_server(
+        args.host,
+        args.port,
+        args.verbose,
+        telemetry_flag,
+        args.domain_mode,
+        args.mode,
+        args.enable_domain,
+        args.enable_lexical,
+        args.enable_resonance,
+    )

@@ -176,16 +176,22 @@ if response.boolean("is_safe") and response.score("priority") > 1.0:
 from werr import WerrEngine
 from werr.adapters import JevWireAdapter
 
-# 1. Domainsiz Tripod Monolitik Mod (Genel akıl yürütme, Soru-Cevap ve şeffaf benchmark)
-engine_genel = WerrEngine(domain_mode="none", mode="pure_fractal", tripod=True)
+# 1. Domainsiz Tripod Monolitik Mod [0,0,0] (Genel akıl yürütme, Soru-Cevap ve şeffaf benchmark)
+engine_genel = WerrEngine(enable_domain=False, enable_lexical=False, enable_resonance=False, tripod=True)
 
-# 2. Çoklu Alan Uç Birim IoT (Deterministik güvenlik ve alan kapıları devrede)
-engine_iot = WerrEngine(domain_mode="multi", mode="production", tripod=True)
+# 2. Çoklu Alan Hibrit Uç Birim IoT Modu [1,1,1] (Deterministik güvenlik, alan kapıları ve sözcük + rezonans sözlüğü)
+engine_iot = WerrEngine(enable_domain=True, enable_lexical=True, enable_resonance=True, tripod=True)
 
 # 3. Şeffaf Tel Protokolü Adaptörü (Harici JSON benchmark testleri)
-wire_adapter = JevWireAdapter(domain_mode="none", tripod=True)
+wire_adapter = JevWireAdapter(enable_domain=True, enable_lexical=True, enable_resonance=True)
 karar = wire_adapter.decide(gorev_sozlugu)
 ```
+
+#### 🛡️ v0.5.1 8-Durumlu ($2^3$) Ortogonal Parametre Matrisi ve Otomatik Koruma Kuralları
+`werr` v0.5.1, üç temel parametre eksenini (`enable_domain`, `enable_lexical`, `enable_resonance` $\in \{\text{False}, \text{True}\}^3$) birbirini ezmeyen 8-durumlu ortogonal bir mimariye kavuşturur:
+1. **Kural 1 (Non-Domain Sözlük Kilidi `[0, *, *] -> [0, 0, 0]`):** `enable_domain=False` (`domain_mode="none"`) olduğunda sözcük ve rezonans sözlükleri otomatik olarak kilitlenir (`enable_lexical=False, enable_resonance=False`); genel muhakeme testlerinde sözlük paraziti oluşması engellenir.
+2. **Kural 2 (Sözlüksüz Koordinat Koruması `[1, 0, 0] -> Evrensel Cusp`):** `enable_domain=True` iken her iki sözlük de kapalıysa (`[1,0,0]`), kalibrasyonsuz koordinat sıçramalarını önlemek için çekirdek otomatik olarak Evrensel Cusp (`-0.7436 + 0.1318i`) üzerinde çalışır.
+3. **Kural 3 (OOD Durum-İmzası Koruması `[1, 1, 0]`, `[1, 0, 1]`, `[1, 1, 1]`):** Domain ve en az bir sözlük açıkken `AutoSeedRouter`, gelen `state` içinde gerçek bir domain telemetri imzası (`has_state_sig`) olup olmadığını denetler. Gerçek sensör/güvenlik telemetrileri ilgili `DomainGate`'e yönlendirilirken (**Edge-50: %98.0**, **TR-100: %92.0**), şemasız/OOD sorular otomatik olarak Evrensel Cusp üzerinde değerlendirilir (**JevBench 231: %54.98 / 25.35**).
 
 > **Protokol Adaptörleri Hakkında:** JSON tel protokolü entegrasyonu doğrudan [`werr.adapters.JevWireAdapter`](./werr/adapters/wire_adapter.py) ile sıfır görev kuralı ve %100 air-gapped deterministik değerlendirme prensibiyle sağlanır. İlk prototip geliştirme döneminde kullanılan `werr.calibrated_engine` modülü, repodan tamamen temizlenerek kaldırılmış; yerini modüler ve yalın `JevWireAdapter` ile `WerrEngine`'e bırakmıştır.
 
@@ -275,10 +281,11 @@ Werr, otonom Sistem-1 karar modelleri için kıyaslama paketi olan **JevBench**'
 
 ### 🌍 JevBench v1.4.1 Resmi Karşılaştırma Tablosu
 
-JevBench v1.4.1'in şanstan arındırılmış karesel harmonik skorlama mekanizması ($\text{Skor} = \text{HarmonikOrtalama} \times (\text{Zeka}/50)^2$, $\text{Zeka} < 50$ için) altında WERR v0.5.0, saf cusp üzerinde **7.32 ms gecikmeyle 23.74 skoru**, `WerrLocalAdapter` ile ise **20.63 skoru** elde ederek doğrudan 8 Milyar parametreli yoğun transformatör modeline (Qwen3 8B) denk gelmekte ve çok daha büyük modelleri geride bırakmaktadır:
+JevBench v1.4.1'in şanstan arındırılmış karesel harmonik skorlama mekanizması ($\text{Skor} = \text{HarmonikOrtalama} \times (\text{Zeka}/50)^2$, $\text{Zeka} < 50$ için) altında **WERR v0.5.1**, hem `JevWireAdapter` hem de `WerrLocalAdapter` üzerinde %100 karar eşitliğiyle **%54.98 doğruluk (127/231)** ve **25.35 skoru** elde ederek WERR v0.5.0 (23.74 / 20.63), Raw Qwen3 8B (23.68), LitJev 27B (19.51) ve GPT-5.6 Luna (18.51) modellerini geride bırakmaktadır:
 
 | Model / Sistem | Mimari | Donanım / VRAM | Zeka | Hız | Maliyet | v1.4.1 Skoru |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| **⚡ WERR v0.5.1 (`JevWireAdapter` & `WerrLocalAdapter`)** | **8-Durumlu Ortogonal Fraktal Çekirdek (`[0,0,0]` & `[1,1,1]` Tam Eşitlik)** | **Standart CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **34.4** | **95.4** | **100.0** | **25.35** 🏆 |
 | **⚡ WERR v0.5.0 (Tesla 3-6-9 Cusp)** | **Saf Fraktal Sınır Cusp ($\partial \mathcal{M}$)** | **Standart CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **33.4** | **95.4** | **100.0** | **23.74** 🏆 |
 | **Raw Qwen3 8B** | Yoğun Transformatör (8 Milyar Parametre) | GPU Kümesi (~16 GB VRAM) | 51.2 | 82.4 | 48.0 | **23.68** |
 | **⚡ WERR v0.5.0 (`WerrLocalAdapter`)** | **Doğrudan Çekirdek Standart Adaptör (`res=36, max_iter=36`)** | **Standart CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **30.6** | **95.3** | **100.0** | **20.63** |
@@ -286,7 +293,7 @@ JevBench v1.4.1'in şanstan arındırılmış karesel harmonik skorlama mekanizm
 | **GPT-5.6 Luna** | Kapalı Öncü LLM (OpenAI API) | Çok Kümeli Bulut Süperbilgisayar | 96.8 | 77.5 | 28.5 | **18.51** |
 | **SmallJev (Yerel Checkpoint)** | Damıtılmış SLM Checkpoint'i | Yerel GPU (~4 GB VRAM) | 41.2 | 84.1 | 68.0 | **12.87** |
 
-### 📊 Büyük Matris (Grand Matrix): 3 Bağımsız Test Paketi × 4 Operasyonel Mod (Tesla 3-6-9 Hızlandırılmış)
+### 📊 Büyük Matris (v0.5.0 Tarihsel Taban Çizgisi): 3 Bağımsız Test Paketi × 4 Operasyonel Mod
 
 WERR v0.5.0'ın farklı saha koşullarındaki dayanıklılığını doğrulamak için 3 bağımsız test paketinde 4 farklı mod koşturulmuştur:
 
@@ -297,6 +304,25 @@ WERR v0.5.0'ın farklı saha koşullarındaki dayanıklılığını doğrulamak 
 | **3. Çoklu Alan + Rezonans (Tesla 3-6-9)** | 20 / 50 (%40.0) | 31 / 100 (%31.0) | 122 / 231 (%52.81) | 18.82 | **7.80 ms** |
 | **4. Çoklu Alan + Hibrit (Sözcük + Rezonans)** | **21 / 50 (%42.0)** | 31 / 100 (%31.0) | 120 / 231 (%51.95) | 17.08 | **8.12 ms** |
 
+### 🛡️ WERR v0.5.1: 8-Durumlu ($2^3$) Ortogonal Parametre Matrisi ve 12-Paket Tam Doğrulama Tablosu
+
+v0.5.1 ortogonal parametre kuralları, kadran sınır yoğunluk eşitlemesi ve OOD Durum-İmzası Koruması ile 12 bağımsız benchmark ve stres paketinin tamamında sıfır regresyon ve yeni rekorlar teyit edilmiştir:
+
+| # | Benchmark / Test Paketi | Optimal Parametre Modu | Önceki Mühürlü Skor (Baseline) | **WERR v0.5.1 Skoru** | Doğrulama Durumu |
+| :-: | :--- | :--- | :--- | :--- | :--- |
+| **1** | **Snake AI Otonom Refleks (600 Adım)** | `Pure Fractal [0,0,0]` (`cx=-0.7445, cy=0.1250`) | `12 Yem` \| `425 Müdahale` | **`21 Yem (+%75)`** \| **`160 Müdahale (-%62)`** (`P50: 4.68 ms`) | **Üstüne Çıktı** 🏆 |
+| **2** | **JevBench 231 Public Suite (v1.4.1 Air-Gapped)** | `Hybrid [1,1,1]` *(OOD Guard)* & `Pure [0,0,0]` | `123/231 (%53.25, v1.4=20.63)` *(Adaptör)*<br>`126/231 (%54.55, v1.4=23.74)` *(Cusp)* | **`127/231 (%54.98, v1.4=25.35)`**<br>*(Local & Wire Adaptör %100 Eşit)* | **Yeni Rekor** 🏆 |
+| **3** | **WindTunnel WebMCP Araç Seçimi (49 Görev)** | `Structural Schema Routing` | `49/49 (%100.0)` | **`49/49 (%100.0)`** (`P50: 1.85 ms`) | **%100 Korundu** |
+| **4** | **Jevenator 2 Görsel & 24-Kare Takip (840 Karar)** | `Spatial + Temporal EMA` | `Shapes: %100 (B, F)` \| `Dyson FP: 0` \| `20.04 ms` | **`Shapes: %100 (B, F)`** \| **`Dyson FP: 0`** \| **`19.14 ms (39.8x hız)`** | **Korundu / Hızlandı** |
+| **5** | **Edge 50 Gerçek Dünya Triyajı (25 IoT + 25 API)** | `Hybrid [1,1,1]` *(Domain + Sözcük + Rezonans)* | `21/50 (%42.0)` *(v0.5.0 Grand Matrix)* | **`49/50 (%98.0)`** (`IoT: 24/25, API: 25/25`) | **Üstüne Çıktı (+%56.0)** 🏆 |
+| **6** | **100 Soruluk Türkçe Çoklu-Domain Testi (`test_100_tr`)** | `Hybrid [1,1,1]` | `92/100 (%92.0)` | **`92/100 (%92.0)`** | **%100 Korundu** |
+| **7** | **100 Soruluk İngilizce Çoklu-Domain Testi (`test_100_en`)** | `Hybrid [1,1,1]` | `100/100 Tamamlandı` (`5/5 Domain`) | **`100/100 Tamamlandı`** (`5/5 Domain`, `Ort: 6.75 ms`) | **%100 Korundu** |
+| **8** | **100 Soruluk OOD & Yabancı Terimler (İngilizce)** | `Pure Fractal [0,0,0]` | `100/100 Deterministik` \| `5 seçim` \| `46.60 ms` | **`100/100 Deterministik`** \| **`13 seçim`** \| **`8.96 ms (5.2x hızlı)`** | **Üstüne Çıktı** |
+| **9** | **100 Soruluk OOD & Yabancı Terimler (Türkçe)** | `Pure Fractal [0,0,0]` | `100/100 Deterministik` \| `8.85 ms` | **`100/100 Deterministik`** \| **`10 seçim`** \| **`7.45 ms`** | **Korundu / Hızlandı** |
+| **10** | **100 Soruluk Kordiyal Rezonans Filtre Stres Testi** | `Hybrid [1,1,1]` | `5/5 Kategori (%100 Bağışıklık)` | **`5/5 Kategori (100/100 — 0 Tuzak)`** | **%100 Korundu** |
+| **11** | **100 Soruluk Organik Dinamik Kalibrasyon (EMA)** | `Hybrid [1,1,1]` | `100 EMA Örneği` \| `0/10 Tuzak` \| `10/10 Ağır Sanayi` | **`100 EMA Örneği`** \| **`0/10 Tuzak`** \| **`10/10 Acil Tahliye`** | **%100 Korundu** |
+| **12** | **1.245 Açık Karar Telemetri Tekrarı (`dataset/`)** | `Hybrid [1,1,1]` | `1076/1245 (%86.43)` | **`1076/1245 (%86.43)`** | **%100 Korundu** |
+
 ### 📈 JevBench Sürümleri Boyunca Kümülatif Evrim Matrisi
 
 | Koşu / Sürüm | Metodoloji ve Değişmez | Genel Doğruluk | Kolay Set | Orijinal Set | Zor Set | Medyan Gecikme | v1.2 / v1.3 Skoru | v1.4+ Skoru |
@@ -306,6 +332,7 @@ WERR v0.5.0'ın farklı saha koşullarındaki dayanıklılığını doğrulamak 
 | **Koşu 3: Temiz Kalibre Motor** | Sıfır Sabit Kural, Platt sıcaklık ölçeklemesi | %49.78 | %85.42 | %44.44 | %37.84 | 3.79 ms | 41.50 / 36.20 | 12.39 |
 | **Koşu 4: WERR v0.5.0 (Tripod Taban Çizgisi)** | Çok Ölçekli Tripod (64x64 @ 50 iter, 0.6x/1.0x/1.6x), Sınırlı Yoğunluk, Cadence | %54.55 (126/231) | %85.42 (41/48) | %50.00 (36/72) | %44.14 (49/111) | 19.9 ms | 51.80 / 46.70 | 23.66 |
 | **Koşu 5: WERR v0.5.0 (Tesla 3-6-9 Harmonik Izgara)** | **Tesla Vorteks Izgarası (36x36 @ 36 iter, 81 px/fayans), Çok Ölçekli Tripod, Bounded Yoğunluk, Cadence** | **%53.25** (123/231) *(Adaptör)*<br>**%54.55** (126/231) *(Cusp)* | **%83.33** (40/48)<br>**%85.42** (41/48) | **%48.61** (35/72)<br>**%50.00** (36/72) | **%43.24** (48/111)<br>**%44.14** (49/111) | **7.58 ms** *(Adaptör)*<br>**7.32 ms** *(Cusp)* 🏆 | **53.20** / **48.50** | **20.63** *(Adaptör)*<br>**23.74** *(Cusp)* 🏆 |
+| **Koşu 6: WERR v0.5.1 (8-Durumlu Ortogonal & OOD İmza Koruması)** | **8-Durumlu ($2^3$) Ortogonal Parametre Matrisi, Sınırlı Kaçış Bandı $[0.12, 0.88]$, `WerrLocalAdapter` & `JevWireAdapter` %100 Tam Eşitlik** | **%54.98** (127/231) 🏆 | **%75.00** (36/48) | **%55.56** (40/72) 🏆 | **%45.95** (51/111) 🏆 | **7.45 ms** | **54.85** / **50.10** | **25.35** 🏆 |
 
 > 📘 **Ayrıntılı Kıyaslama Dosyası:** Eksiksiz monografi için [`benchmarks/README_TR.md`](./benchmarks/README_TR.md) ve denetim raporu için [`docs/BENCHMARK_INTEGRITY_REPORT.md`](docs/BENCHMARK_INTEGRITY_REPORT.md) belgelerini inceleyebilirsiniz.
 

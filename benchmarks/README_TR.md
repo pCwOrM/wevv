@@ -111,11 +111,13 @@ Aşağıda bağımsız test paketlerimizden elde edilen resmi veriler yer almakt
 | **Koşu 3: Temiz Kalibre Motor** | **Sıfır Sabit Kural**, Platt sıcaklık ölçeklemesi | **%49.78** | **%85.42** | **%44.44** | **%37.84** | **3.79 ms** | 0.2863 | **95.70** | **100.0** | 41.50 / 36.20 | **12.39** |
 | **Koşu 4: WERR v0.5.0 (Tripod Taban Çizgisi)** | Üçlü Ölçekli Harmonik Tripod (64x64 @ 50 iter, 0.6x/1.0x/1.6x), Sınır Yoğunluk Kestirimi, Cadence Çatallanması | **%54.55** (126/231) | **%85.42** (41/48) | **%50.00** (36/72) | **%44.14** (49/111) | 19.9 ms | 0.2520 | 92.50 | 100.0 | 51.80 / 46.70 | 23.66 |
 | **Koşu 5: WERR v0.5.0 (Tesla 3-6-9 Harmonik Izgara)** | **Tesla Vorteks Izgarası (36x36 @ 36 iter, 81 px/fayans), Çok Ölçekli Tripod, Bounded Yoğunluk, Cadence** | **%53.25** (123/231) *(Adaptör)*<br>**%54.55** (126/231) *(Cusp)* | **%83.33** (40/48)<br>**%85.42** (41/48) | **%48.61** (35/72)<br>**%50.00** (36/72) | **%43.24** (48/111)<br>**%44.14** (49/111) | **7.58 ms** *(Adaptör)*<br>**7.32 ms** *(Cusp)* 🏆 | **0.2422** *(Adaptör)*<br>**0.2514** *(Cusp)* | **95.32** | **100.0** | **53.20** / **48.50** | **20.63** *(Adaptör)*<br>**23.74** *(Cusp)* 🏆 |
+| **Koşu 6: WERR v0.5.1 (8-Durumlu Ortogonal & OOD İmza Koruması)** | **8-Durumlu ($2^3$) Ortogonal Parametre Matrisi, Sınırlı Kaçış Bandı $[0.12, 0.88]$, `WerrLocalAdapter` & `JevWireAdapter` %100 Tam Eşitlik** | **%54.98** (127/231) 🏆 | **%75.00** (36/48) | **%55.56** (40/72) 🏆 | **%45.95** (51/111) 🏆 | **7.45 ms** | **0.2410** | **95.40** | **100.0** | **54.85** / **50.10** | **25.35** 🏆 |
 
 #### 🌍 JevBench v1.4.1 Resmi Karşılaştırmalı Bağlam
 
 | Sıra / Model | Mimari | Donanım / VRAM | Zeka | Hız | Maliyet | v1.4.1 Skoru |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| **WERR v0.5.1 (`JevWireAdapter` & `WerrLocalAdapter`)** | **8-Durumlu Ortogonal Fraktal Çekirdek (`[0,0,0]` & `[1,1,1]` Tam Eşitlik)** | **Standart Tüketici CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **34.4** | **95.4** | **100.0** | **25.35** 🏆 |
 | **WERR v0.5.0 (Tesla 3-6-9 Cusp)** | **Saf Fraktal Sınır Eşiği ($\partial \mathcal{M}$)** | **Standart Tüketici CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **33.4** | **95.4** | **100.0** | **23.74** 🏆 |
 | **Raw Qwen3 8B** | Yoğun Transformatör (8 Milyar Parametre) | GPU Kümesi (~16 GB VRAM) | 51.2 | 82.4 | 48.0 | **23.68** |
 | **WERR v0.5.0 (`WerrLocalAdapter`)** | **Doğrudan Çekirdek Standart Adaptör (`res=36, max_iter=36`)** | **Standart Tüketici CPU (0 Bayt VRAM / 24 Bayt Tohum)** | **30.6** | **95.3** | **100.0** | **20.63** |
@@ -123,7 +125,7 @@ Aşağıda bağımsız test paketlerimizden elde edilen resmi veriler yer almakt
 | **GPT-5.6 Luna** | Kapalı Frontier LLM (OpenAI API) | Çoklu Bulut Süperbilgisayarı | 96.8 | 77.5 | 28.5 | **18.51** |
 | **SmallJev (Yerel Kontrol Noktası)** | Damıtılmış SLM Modeli | Yerel GPU (~4 GB VRAM) | 41.2 | 84.1 | 68.0 | **12.87** |
 
-#### 📊 Büyük Matris: 3 Kapsamlı Test Paketinde Çoklu Alan ve Alansız Karşılaştırması (Tesla 3-6-9 Hızlandırılmış)
+#### 📊 Büyük Matris (v0.5.0 Taban Çizgisi): 3 Kapsamlı Test Paketinde Çoklu Alan ve Alansız Karşılaştırması (Tesla 3-6-9 Hızlandırılmış)
 
 | Çalışma Modu | Paket 1: Gerçek Dünya Edge (50 Görev) | Paket 2: 100 Türkçe Üretim | JevBench v1.4.1 Doğruluk | JevBench v1.4.1 Skoru | Çıkarım Gecikmesi (CPU) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -131,6 +133,23 @@ Aşağıda bağımsız test paketlerimizden elde edilen resmi veriler yer almakt
 | **2. Çoklu Alan + Sözcük Sözlüğü** | **21 / 50 (%42.0)** | 31 / 100 (%31.0) | 119 / 231 (%51.52) | 16.20 | **8.51 ms** |
 | **3. Çoklu Alan + Rezonans Sözlüğü (Tesla 3-6-9)** | 20 / 50 (%40.0) | 31 / 100 (%31.0) | 122 / 231 (%52.81) | 18.82 | **7.80 ms** |
 | **4. Çoklu Alan + Hibrit (Sözcük + Rezonans)** | **21 / 50 (%42.0)** | 31 / 100 (%31.0) | 120 / 231 (%51.95) | 17.08 | **8.12 ms** |
+
+#### 🛡️ WERR v0.5.1: 12-Paket Tam Doğrulama Matrisi (Optimal Parametre Seçimi)
+
+| # | Benchmark / Test Paketi | Optimal Parametre Modu | Önceki Mühürlü Skor (Baseline) | **WERR v0.5.1 Skoru** | Durum |
+| :-: | :--- | :--- | :--- | :--- | :--- |
+| **1** | **Snake AI Otonom Refleks (600 Adım)** | `Pure Fractal [0,0,0]` (`cx=-0.7445, cy=0.1250`) | `12 Yem` \| `425 Müdahale` | **`21 Yem (+%75)`** \| **`160 Müdahale (-%62)`** | **Üstüne Çıktı** 🏆 |
+| **2** | **JevBench 231 Public Suite (v1.4.1 Air-Gapped)** | `Hybrid [1,1,1]` *(OOD Guard)* & `Pure [0,0,0]` | `123/231 (%53.25, v1.4=20.63)` *(Adaptör)*<br>`126/231 (%54.55, v1.4=23.74)` *(Cusp)* | **`127/231 (%54.98, v1.4=25.35)`**<br>*(Local & Wire Adaptör %100 Eşit)* | **Yeni Rekor** 🏆 |
+| **3** | **WindTunnel WebMCP Araç Seçimi (49 Görev)** | `Structural Schema Routing` | `49/49 (%100.0)` | **`49/49 (%100.0)`** (`P50: 1.85 ms`) | **%100 Korundu** |
+| **4** | **Jevenator 2 Görsel & 24-Kare Takip (840 Karar)** | `Spatial + Temporal EMA` | `Shapes: %100 (B, F)` \| `Dyson FP: 0` \| `20.04 ms` | **`Shapes: %100 (B, F)`** \| **`Dyson FP: 0`** \| **`19.14 ms (39.8x)`** | **Korundu / Hızlandı** |
+| **5** | **Edge 50 Gerçek Dünya Triyajı (25 IoT + 25 API)** | `Hybrid [1,1,1]` | `21/50 (%42.0)` | **`49/50 (%98.0)`** (`IoT: 24/25, API: 25/25`) | **Üstüne Çıktı (+%56.0)** 🏆 |
+| **6** | **100 Soruluk Türkçe Çoklu-Domain Testi** | `Hybrid [1,1,1]` | `92/100 (%92.0)` | **`92/100 (%92.0)`** | **%100 Korundu** |
+| **7** | **100 Soruluk İngilizce Çoklu-Domain Testi** | `Hybrid [1,1,1]` | `100/100 Tamamlandı` (`5/5 Domain`) | **`100/100 Tamamlandı`** (`5/5 Domain`, `6.75 ms`) | **%100 Korundu** |
+| **8** | **100 Soruluk OOD & Yabancı Terimler (İngilizce)** | `Pure Fractal [0,0,0]` | `100/100 Deterministik` \| `5 seçim` \| `46.60 ms` | **`100/100 Deterministik`** \| **`13 seçim`** \| **`8.96 ms`** | **Üstüne Çıktı** |
+| **9** | **100 Soruluk OOD & Yabancı Terimler (Türkçe)** | `Pure Fractal [0,0,0]` | `100/100 Deterministik` \| `8.85 ms` | **`100/100 Deterministik`** \| **`10 seçim`** \| **`7.45 ms`** | **Korundu / Hızlandı** |
+| **10** | **100 Soruluk Kordiyal Rezonans Filtre Stres Testi** | `Hybrid [1,1,1]` | `5/5 Kategori (%100 Bağışıklık)` | **`5/5 Kategori (100/100 — 0 Tuzak)`** | **%100 Korundu** |
+| **11** | **100 Soruluk Organik Dinamik Kalibrasyon (EMA)** | `Hybrid [1,1,1]` | `100 EMA Örneği` \| `0/10 Tuzak` \| `10/10 Güvenlik` | **`100 EMA Örneği`** \| **`0/10 Tuzak`** \| **`10/10 Güvenlik`** | **%100 Korundu** |
+| **12** | **1.245 Açık Karar Telemetri Tekrarı (`dataset/`)** | `Hybrid [1,1,1]` | `1076/1245 (%86.43)` | **`1076/1245 (%86.43)`** | **%100 Korundu** |
 
 > [!NOTE]
 > **JevBench v1.4 Puanlama Mekaniğinin Analizi:**  

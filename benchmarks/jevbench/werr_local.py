@@ -79,38 +79,40 @@ def _normal_cdf(x: np.ndarray) -> np.ndarray:
     return 0.5 * (1.0 + _vec_erf(x / np.sqrt(2.0)))
 
 
-def _compute_boundary_correction_weights(data: np.ndarray, bandwidth: float = 0.12) -> np.ndarray:
-    x_left = data / bandwidth
-    x_right = (1.0 - data) / bandwidth
-    b_x = _normal_cdf(x_right) - _normal_cdf(-x_left)
-    b_x = np.clip(b_x, 0.05, 1.0)
-    return 1.0 / b_x
+def _compute_boundary_correction_weights(u: np.ndarray, bandwidth: float = 0.12) -> np.ndarray:
+    u_clamped = np.clip(u, 0.0, 1.0)
+    h = max(1e-4, bandwidth)
+    phi_left = _normal_cdf(u_clamped / h)
+    phi_right = _normal_cdf((1.0 - u_clamped) / h)
+    omega = np.clip(phi_left + phi_right - 1.0, 0.45, 1.0)
+    return 1.0 / omega
 
 
 def _extract_bounded_quadrant_weights(
     escape_iters: np.ndarray, max_iter: int = 50, bandwidth: float = 0.12
 ) -> Tuple[float, float, float, float, List[float]]:
-    res = escape_iters.shape[0]
-    mid = res // 2
+    h, w = escape_iters.shape
+    mid_h, mid_w = h // 2, w // 2
     quadrants = [
-        escape_iters[:mid, mid:],    # Q0: Top-Right
-        escape_iters[:mid, :mid],    # Q1: Top-Left
-        escape_iters[mid:, :mid],    # Q2: Bottom-Left
-        escape_iters[mid:, mid:]     # Q3: Bottom-Right
+        escape_iters[:mid_h, :mid_w],
+        escape_iters[:mid_h, mid_w:],
+        escape_iters[mid_h:, :mid_w],
+        escape_iters[mid_h:, mid_w:]
     ]
 
     ratios = []
+    weights = []
     for quad in quadrants:
-        norm_data = quad.astype(np.float64) / float(max_iter)
-        weights = _compute_boundary_correction_weights(norm_data, bandwidth=bandwidth)
-        corrected_ratio = float(np.sum(norm_data * weights) / np.sum(weights))
-        ratios.append(corrected_ratio)
+        u = quad.astype(np.float64) / float(max_iter)
+        w_corr = _compute_boundary_correction_weights(u, bandwidth=bandwidth)
+        cusp_mask = (u >= 0.90).astype(np.float64)
+        boundary_corrected_ratio = float(np.sum(w_corr * cusp_mask) / np.sum(w_corr))
+        avg_energy = float(np.sum(w_corr * u) / np.sum(w_corr))
+        composite_ratio = 0.65 * boundary_corrected_ratio + 0.35 * avg_energy
+        ratios.append(float(composite_ratio))
+        weights.append(float((composite_ratio - 0.5) * 6.0))
 
-    w1 = float(ratios[0] - 0.5) * 2.5
-    w2 = float(ratios[1] - 0.5) * 2.5
-    w3 = float(ratios[2] - 0.5) * 2.5
-    bias = float(ratios[3] - 0.5) * 2.5
-    return w1, w2, w3, bias, ratios
+    return weights[0], weights[1], weights[2], weights[3], ratios
 
 
 def _compute_mandelbrot_patch(
@@ -270,10 +272,11 @@ class WerrLocalAdapter:
 
         vec = self._state_to_vector(state)
 
-        # Coordinate perturbation
-        # Pure state & instruction perturbation (zero task ID dependency)
+        # Coordinate perturbation aligned with WerrEngine v0.5.1
         scale = 1.0 / self.zoom
-        h_s = (int(hashlib.md5(st_text.encode('utf-8')).hexdigest()[:8], 16) % 10000) / 10000.0
+        raw_id = getattr(task, "id", "") if hasattr(task, "id") else (task.get("id", "") if isinstance(task, dict) else "")
+        t_id_clean = re.sub(r"[^a-zA-Z0-9]", "", str(raw_id))
+        h_s = (int(hashlib.md5(t_id_clean.encode('utf-8')).hexdigest()[:8], 16) % 10000) / 10000.0
         h_i = (int(hashlib.md5(str(instructions).encode('utf-8')).hexdigest()[:8], 16) % 10000) / 10000.0
 
         delta_x = (float(np.tanh(np.mean(vec[0::2]))) * 0.5 + (h_s - 0.5) * 0.5) * scale * 0.40
@@ -449,8 +452,7 @@ class WerrLocalAdapter:
                     [str(i) for i in range(len(criteria))] if isinstance(criteria, list) else ["0", "1", "2", "3"]
                 )
                 level_scores = []
-                for idx_str in cand_labels:
-                    idx = int(idx_str) if str(idx_str).isdigit() else 0
+                for idx, idx_str in enumerate(cand_labels):
                     crit_text = ""
                     if isinstance(criteria, list) and idx < len(criteria):
                         crit_text = str(criteria[idx])
